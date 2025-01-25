@@ -7,6 +7,8 @@ import {Counter} from "../src/Counter.sol";
 contract CounterTest is Test {
     Counter public counter;
 
+    address public alice = makeAddr("alice");
+
     function setUp() public {
         counter = new Counter();
         counter.setNumber(0);
@@ -20,5 +22,15 @@ contract CounterTest is Test {
     function testFuzz_SetNumber(uint256 x) public {
         counter.setNumber(x);
         assertEq(counter.number(), x);
+    }
+
+    function test_SetPrice() public {
+        counter.setPrice(100);
+        assertEq(counter.price(), 100);
+        console.log("Price set to:", counter.price());
+
+        vm.prank(alice);
+        vm.expectRevert("only owner can set price");
+        counter.setPrice(200);
     }
 }
