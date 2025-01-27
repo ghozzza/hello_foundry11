@@ -5,10 +5,7 @@ import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol
 
 interface IAavePool {
     function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf)
-        external;
-    // function repay(address asset, uint256 amount, uint256 rateMode, address onBehalfOf) external;
-    // function withdraw(address asset, uint256 amount, address to) external;
+    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf) external;
 }
 
 contract LendingPool {
@@ -26,6 +23,7 @@ contract LendingPool {
 
     mapping(address => uint256) public totalSupply;
     mapping(address => Supply[]) public totalUserSupply;
+    mapping(address => uint256) public totalUserBorrow;
 
     // Jaminan
     // Supply WBTC
@@ -68,6 +66,7 @@ contract LendingPool {
         //borrow
         IAavePool(pool).borrow(_token, amount, 2, 0, address(this));
         // transfer dari contract lending ke user
+        totalUserBorrow[msg.sender] += amount;
         IERC20(_token).transfer(msg.sender, amount);
     }
 

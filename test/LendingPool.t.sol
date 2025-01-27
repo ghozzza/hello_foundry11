@@ -19,30 +19,29 @@ contract LendingPoolTest is Test {
         lendingPool = new LendingPool();
     }
 
-    function helperSupplyCollateral() public {
+    function test_supplyCollateral() public {
         deal(wbtc, address(this), 1e8);
         IERC20(wbtc).approve(address(lendingPool), 1e8);
 
-        // deal(usdc, address(this), 1000e6);
-        // IERC20(usdc).approve(address(lendingPool), 1000e6);
-        lendingPool.supplyCollateral(1e8, 0);
+        deal(usdc, address(this), 1000e6);
+        IERC20(usdc).approve(address(lendingPool), 1000e6);
+        lendingPool.supplyCollateral(1e8, 1000e6);
+
+        (address token, uint256 amountBTC) = lendingPool.totalUserSupply(address(this), 0);
+
+        console.log("total WBTC Supply:", lendingPool.totalSupply(wbtc));
+        console.log("total USDC Supply:", lendingPool.totalSupply(usdc));
+        console.log("WBTC Balance: ", IERC20(wbtc).balanceOf(address(this)));
+        console.log("USDC Balance: ", IERC20(usdc).balanceOf(address(this)));
+        console.log("Token: ", token);
+        console.log("User WBTC Supply: ", amountBTC);
     }
 
-    // function test_supplyCollateral() public {
-    //     helperSupplyCollateral();
+    function test_borrowUSDC() public {
+        deal(wbtc, address(this), 1e8);
+        IERC20(wbtc).approve(address(lendingPool), 1e8);
 
-    //     (address token, uint256 amountBTC) = lendingPool.totalUserSupply(address(this), 0);
-
-    //     console.log("total WBTC Supply:", lendingPool.totalSupply(wbtc));
-    //     console.log("total USDC Supply:", lendingPool.totalSupply(usdc));
-    //     console.log("WBTC Balance: ", IERC20(wbtc).balanceOf(address(this)));
-    //     console.log("USDC Balance: ", IERC20(usdc).balanceOf(address(this)));
-    //     console.log("Token: ", token);
-    //     console.log("User WBTC Supply: ", amountBTC);
-    // }
-
-    function test_borrow() public {
-        helperSupplyCollateral();
+        lendingPool.supplyCollateral(1e8, 0);
 
         lendingPool.borrow(1000e6, usdc);
 
@@ -55,5 +54,21 @@ contract LendingPoolTest is Test {
         console.log("Token: ", token);
         console.log("User WBTC Supply: ", amountBTC);
     }
+    function test_borrowWBTC() public {
+        deal(wbtc, address(this), 1e8);
+        IERC20(wbtc).approve(address(lendingPool), 1e8);
+
+        lendingPool.supplyCollateral(1e8, 0);
+
+        lendingPool.borrow(1e6, wbtc);
+
+        (address token, uint256 amountBTC) = lendingPool.totalUserSupply(address(this), 0);
+
+        console.log("total WBTC Supply:", lendingPool.totalSupply(wbtc));
+        console.log("total USDC Supply:", lendingPool.totalSupply(usdc));
+        console.log("WBTC Balance: ", IERC20(wbtc).balanceOf(address(this)));
+        console.log("USDC Balance: ", IERC20(usdc).balanceOf(address(this)));
+        console.log("Token: ", token);
+        console.log("User WBTC Supply: ", amountBTC);
+    }
 }
-// 2.000.000.000
