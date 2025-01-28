@@ -33,7 +33,7 @@ contract LendingPool {
             IERC20(wbtc).transferFrom(msg.sender, address(this), amountWBTC);
             // supply
             IERC20(wbtc).approve(pool, amountWBTC);
-            IAavePool(pool).supply(wbtc, amountWBTC, address(this), 0);
+            IAavePool(pool).supply(wbtc, amountWBTC, address(this), 0); // bingung
             totalSupply[wbtc] += amountWBTC;
 
             for (uint256 i = 0; i < totalUserSupply[msg.sender].length; i++) {
@@ -48,7 +48,7 @@ contract LendingPool {
             IERC20(usdc).transferFrom(msg.sender, address(this), amountUSDC);
             // supply
             IERC20(usdc).approve(pool, amountUSDC);
-            IAavePool(pool).supply(usdc, amountUSDC, address(this), 0);
+            IAavePool(pool).supply(usdc, amountUSDC, address(this), 0); // bingung
             totalSupply[usdc] += amountUSDC;
 
             for (uint256 i = 0; i < totalUserSupply[msg.sender].length; i++) {
@@ -79,4 +79,6 @@ contract LendingPool {
 // sandwich attack
 
 // uniswap udah kasih calculated, sdk
-//collateral si vault
+// collateral si vault
+
+// collateral token erc20, collateral nft(?).
