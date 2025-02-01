@@ -2,83 +2,151 @@
 pragma solidity ^0.8.13;
 
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-
-interface IAavePool {
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-    function borrow(address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address onBehalfOf) external;
-}
+import {Position} from "./Position.sol";
 
 contract LendingPool {
-    address public supplyAsset;
-    address public borrowAsset;
+    Position public position;
+    uint256 public totalSupplyAssets;
+    uint256 public totalSupplyShares;
+    uint256 public totalBorrowAssets;
+    uint256 public totalBorrowShares;
 
-    address public pool = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2;
-    address public usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address public wbtc = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
+    mapping(address => uint256) public userSupplyShares;
+    mapping(address => uint256) public userBorrowShares;
+    mapping(address => uint256) public userCollaterals;
+    mapping(address => address) public addressPosition;
 
-    struct Supply {
-        address token;
-        uint256 amount;
+    // address token0; // collateral(?)
+    address public token1; // collateral(?)
+    address public token2; // borrow(?)
+    uint256 public lastAccrued;
+
+    constructor(
+        // address _token0,
+        address _token1,
+        address _token2
+    ) {
+        // token0 = _token0;
+        token1 = _token1;
+        token2 = _token2;
+        lastAccrued = block.timestamp;
     }
 
-    mapping(address => uint256) public totalSupply;
-    mapping(address => Supply[]) public totalUserSupply;
-    mapping(address => uint256) public totalUserBorrow;
-
-    // Jaminan
-    // Supply WBTC
-    function supplyCollateral(uint256 amountWBTC, uint256 amountUSDC) external {
-        // transfer dari user ke contract lending
-        if (amountWBTC != 0) {
-            IERC20(wbtc).transferFrom(msg.sender, address(this), amountWBTC);
-            // supply
-            IERC20(wbtc).approve(pool, amountWBTC);
-            IAavePool(pool).supply(wbtc, amountWBTC, address(this), 0); // bingung
-            totalSupply[wbtc] += amountWBTC;
-
-            for (uint256 i = 0; i < totalUserSupply[msg.sender].length; i++) {
-                if (totalUserSupply[msg.sender][i].token == wbtc) {
-                    totalUserSupply[msg.sender][i].amount += amountWBTC;
-                    break;
-                }
-            }
-            totalUserSupply[msg.sender].push(Supply({token: wbtc, amount: amountWBTC}));
-        }
-        if (amountUSDC != 0) {
-            IERC20(usdc).transferFrom(msg.sender, address(this), amountUSDC);
-            // supply
-            IERC20(usdc).approve(pool, amountUSDC);
-            IAavePool(pool).supply(usdc, amountUSDC, address(this), 0); // bingung
-            totalSupply[usdc] += amountUSDC;
-
-            for (uint256 i = 0; i < totalUserSupply[msg.sender].length; i++) {
-                if (totalUserSupply[msg.sender][i].token == usdc) {
-                    totalUserSupply[msg.sender][i].amount += amountUSDC;
-                    break;
-                }
-            }
-            totalUserSupply[msg.sender].push(Supply({token: usdc, amount: amountUSDC}));
+    function createPosition() public {
+        if (addressPosition[msg.sender] == address(0)) {
+            position = new Position(token1, token2);
+            addressPosition[msg.sender] = address(position);
         }
     }
 
-    // Borrow USDC
-    function borrow(uint256 amount, address _token) external {
-        //borrow
-        IAavePool(pool).borrow(_token, amount, 2, 0, address(this));
-        // transfer dari contract lending ke user
-        totalUserBorrow[msg.sender] += amount;
-        IERC20(_token).transfer(msg.sender, amount);
+    function supply(uint256 amount) public {
+        // Tujuannya adalah untuk penyedia token
+        IERC20(token2).transferFrom(msg.sender, address(this), amount);
+
+        _accrueInterest();
+        uint256 shares = 0;
+        if (totalSupplyAssets == 0) {
+            shares = amount;
+        } else {
+            shares = (amount * totalSupplyShares) / totalSupplyAssets;
+        }
+
+        totalSupplyAssets += amount;
+        totalSupplyShares += shares;
+        userSupplyShares[msg.sender] += shares;
     }
 
-    // tidak perlu kalo hackahton (opsional)
-    // function repay() external {} // repayUSDC
-    // function withdrawCollateral(uint256) external {} // withdraw WBTC
-    // function withdraw(uint256 amount) external {} // withdraw USDC
+    function withdraw(uint256 amount) public {
+        // user withdraw dapat yield
+        uint256 shares = (amount * totalSupplyShares) / totalSupplyAssets;
+
+        totalSupplyAssets -= amount;
+        totalSupplyShares -= shares;
+        userSupplyShares[msg.sender] -= shares;
+
+        IERC20(token2).transfer(msg.sender, amount);
+    }
+
+    function accrueInterest() public {
+        _accrueInterest();
+    }
+
+    function _accrueInterest() internal {
+        uint256 borrowRate = 5;
+
+        uint256 interestPerYear = totalBorrowAssets * borrowRate / 100;
+        uint256 elapsedTime = block.timestamp - lastAccrued;
+
+        uint256 interest = (interestPerYear * elapsedTime) / 365 days;
+
+        totalBorrowAssets += interest;
+        totalSupplyAssets += interest;
+
+        lastAccrued = block.timestamp;
+    }
+
+    // By Position
+
+    // function supplyCollateral(uint256 amount0, uint256 amount1) public {
+    //     accrueInterest();
+
+    //     IERC20(collateral0).transferFrom(msg.sender, address(this), amount0);
+    //     IERC20(collateral1).transferFrom(msg.sender, address(this), amount1);
+
+    //     userCollaterals[msg.sender] += amount;
+    // }
+
+    function supplyCollateralByPosition(
+        // uint256 _position,
+        // uint256 amount0,
+        uint256 _amount
+    ) public {
+        // if (addressPosition[msg.sender][_position] != address(0)) {
+        if (addressPosition[msg.sender] != address(0)) {
+            accrueInterest();
+
+            IERC20(token1).transferFrom(msg.sender, address(this), _amount);
+            // position = Position(addressPosition[msg.sender][_position]);
+            position = Position(addressPosition[msg.sender]);
+            userCollaterals[msg.sender] += _amount;
+        } else {
+            revert();
+        }
+    }
+
+    function borrowByPosition(uint256 amount) public {
+        if (addressPosition[msg.sender] != address(0)) {
+            accrueInterest();
+            uint256 shares;
+            if (totalBorrowShares != 0) {
+                shares = (amount * totalBorrowShares) / totalBorrowAssets;
+            } else {
+                shares = amount;
+            }
+
+            totalBorrowAssets += amount;
+            totalBorrowShares += shares;
+            userBorrowShares[msg.sender] += shares;
+
+            IERC20(token2).transfer(msg.sender, amount);
+        } else {
+            revert();
+        }
+    }
+
+    function withdrawCollateral(
+        // uint256 amount0,
+        uint256 amount1
+    ) public {
+        // require(userCollaterals[msg.sender] >= amount0, "insufficient collateral");
+        require(userCollaterals[msg.sender] >= amount1, "insufficient collateral");
+        require(userBorrowShares[msg.sender] == 0, "cannot withdraw while borrowing");
+
+        accrueInterest();
+
+        // IERC20(token0).transfer(msg.sender, amount0);
+        IERC20(token1).transfer(msg.sender, amount1);
+
+        // userCollaterals[msg.sender] -= amount;
+    }
 }
-
-// sandwich attack
-
-// uniswap udah kasih calculated, sdk
-// collateral si vault
-
-// collateral token erc20, collateral nft(?).
