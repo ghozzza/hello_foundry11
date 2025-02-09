@@ -1,152 +1,217 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import {Position} from "./Position.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+interface IOracle {
+    function getPrice() external view returns (uint256);
+}
 
 contract LendingPool {
-    Position public position;
-    uint256 public totalSupplyAssets;
+    // erros
+    error ZeroAmount();
+    error InsufficientShares();
+    error InsufficientLiquidity();
+    error InsufficientCollateral();
+    error LTVExceedMaxAmount();
+    error InvalidOracle();
+    error FlashloanFailed();
+    // events
+
+    event Supply(address user, uint256 amount, uint256 shares);
+    event Withdraw(address user, uint256 amount, uint256 shares);
+    event SupplyCollateral(address user, uint256 amount);
+    event Borrow(address user, uint256 amount, uint256 shares);
+    event Repay(address user, uint256 amount, uint256 shares);
+    event Flashloan(address user, address token, uint256 amount);
+
+    // supply
     uint256 public totalSupplyShares;
-    uint256 public totalBorrowAssets;
-    uint256 public totalBorrowShares;
+    uint256 public totalSupplyAssets;
 
     mapping(address => uint256) public userSupplyShares;
+
+    // borrow
+
+    uint256 public totalBorrowShares;
+    uint256 public totalBorrowAssets;
+
     mapping(address => uint256) public userBorrowShares;
     mapping(address => uint256) public userCollaterals;
-    mapping(address => address) public addressPosition;
 
-    // address token0; // collateral(?)
-    address public token1; // collateral(?)
-    address public token2; // borrow(?)
-    uint256 public lastAccrued;
+    uint256 public lastAccrued = block.timestamp;
 
-    constructor(
-        // address _token0,
-        address _token1,
-        address _token2
-    ) {
-        // token0 = _token0;
-        token1 = _token1;
-        token2 = _token2;
-        lastAccrued = block.timestamp;
+    uint256 public borrowRate = 1e17; // 18 decimals setara 10%
+
+    address public collateralToken;
+    address public debtToken;
+
+    uint256 ltv; // 18 decimals
+
+    address public oracle;
+
+    constructor(address _collateralToken, address _debtToken, address _oracle, uint256 _ltv) {
+        collateralToken = _collateralToken;
+        debtToken = _debtToken;
+
+        if (_oracle == address(0)) revert InvalidOracle();
+        oracle = _oracle;
+
+        if (_ltv > 1e18) revert LTVExceedMaxAmount();
+        ltv = _ltv;
     }
 
-    function createPosition() public {
-        if (addressPosition[msg.sender] == address(0)) {
-            position = new Position(token1, token2);
-            addressPosition[msg.sender] = address(position);
-        }
-    }
-
-    function supply(uint256 amount) public {
-        // Tujuannya adalah untuk penyedia token
-        IERC20(token2).transferFrom(msg.sender, address(this), amount);
+    function supply(uint256 amount) external {
+        if (amount == 0) revert ZeroAmount();
 
         _accrueInterest();
+
         uint256 shares = 0;
-        if (totalSupplyAssets == 0) {
+        if (totalSupplyShares == 0) {
             shares = amount;
         } else {
-            shares = (amount * totalSupplyShares) / totalSupplyAssets;
+            shares = ((amount * totalSupplyShares) / totalSupplyAssets);
         }
 
-        totalSupplyAssets += amount;
-        totalSupplyShares += shares;
         userSupplyShares[msg.sender] += shares;
+        totalSupplyShares += shares;
+        totalSupplyAssets += amount;
+
+        IERC20(debtToken).transferFrom(msg.sender, address(this), amount);
+
+        emit Supply(msg.sender, amount, shares);
     }
 
-    function withdraw(uint256 amount) public {
-        // user withdraw dapat yield
-        uint256 shares = (amount * totalSupplyShares) / totalSupplyAssets;
+    function withdraw(uint256 shares) external {
+        if (shares == 0) revert ZeroAmount();
+        if (shares > userSupplyShares[msg.sender]) revert InsufficientShares();
 
-        totalSupplyAssets -= amount;
-        totalSupplyShares -= shares;
+        _accrueInterest();
+
+        uint256 amount = ((shares * totalSupplyAssets) / totalSupplyShares);
+
         userSupplyShares[msg.sender] -= shares;
+        totalSupplyShares -= shares;
+        totalSupplyAssets -= amount;
 
-        IERC20(token2).transfer(msg.sender, amount);
+        if (totalSupplyAssets < totalBorrowAssets) {
+            revert InsufficientLiquidity();
+        }
+
+        IERC20(debtToken).transfer(msg.sender, amount);
+
+        emit Withdraw(msg.sender, amount, shares);
     }
 
-    function accrueInterest() public {
+    function borrow(uint256 amount) external {
+        _accrueInterest();
+
+        uint256 shares = 0;
+        if (totalBorrowShares == 0) {
+            shares = amount;
+        } else {
+            shares = ((amount * totalBorrowShares) / totalBorrowAssets);
+        }
+
+        userBorrowShares[msg.sender] += shares;
+        totalBorrowShares += shares;
+        totalBorrowAssets += amount;
+
+        _isHealthy(msg.sender);
+        if (totalBorrowAssets > totalSupplyAssets) {
+            revert InsufficientLiquidity();
+        }
+
+        IERC20(debtToken).transfer(msg.sender, amount);
+
+        emit Borrow(msg.sender, amount, shares);
+    }
+
+    function repay(uint256 shares) external {
+        if (shares == 0) revert ZeroAmount();
+
+        _accrueInterest();
+
+        uint256 borrowAmount = ((shares * totalBorrowAssets) / totalBorrowShares);
+
+        userBorrowShares[msg.sender] -= shares;
+        totalBorrowShares -= shares;
+        totalBorrowAssets -= borrowAmount;
+
+        IERC20(debtToken).transferFrom(msg.sender, address(this), borrowAmount);
+
+        emit Repay(msg.sender, borrowAmount, shares);
+    }
+
+    function supplyCollateral(uint256 amount) external {
+        if (amount == 0) revert ZeroAmount();
+
+        _accrueInterest();
+
+        userCollaterals[msg.sender] += amount;
+
+        IERC20(collateralToken).transferFrom(msg.sender, address(this), amount);
+
+        emit SupplyCollateral(msg.sender, amount);
+    }
+
+    function withdrawCollateral(uint256 amount) public {
+        if (amount == 0) revert ZeroAmount();
+        if (amount > userCollaterals[msg.sender]) {
+            revert InsufficientCollateral();
+        }
+
+        _accrueInterest();
+
+        userCollaterals[msg.sender] -= amount;
+
+        _isHealthy(msg.sender);
+
+        IERC20(collateralToken).transfer(msg.sender, amount);
+    }
+
+    function _isHealthy(address user) internal view {
+        uint256 collateralPrice = IOracle(oracle).getPrice();
+        uint256 collateralDecimals = 10 ** IERC20Metadata(collateralToken).decimals(); // 1e18
+
+        uint256 borrowed = (userBorrowShares[user] * totalBorrowAssets) / totalBorrowShares;
+
+        uint256 collateralValue = (userCollaterals[user] * collateralPrice) / collateralDecimals;
+        uint256 maxBorrow = (collateralValue * ltv) / 1e18;
+
+        if (borrowed > maxBorrow) revert InsufficientCollateral();
+    }
+
+    function accureInterest() external {
         _accrueInterest();
     }
 
     function _accrueInterest() internal {
-        uint256 borrowRate = 5;
+        uint256 interestPerYear = (totalBorrowAssets * borrowRate) / 1e18;
+        // 1000 * 1e17 / 1e18 = 100/year
 
-        uint256 interestPerYear = totalBorrowAssets * borrowRate / 100;
         uint256 elapsedTime = block.timestamp - lastAccrued;
+        // 1 hari
 
         uint256 interest = (interestPerYear * elapsedTime) / 365 days;
+        // interest = $100 * 1 hari / 365 hari  = $0.27
 
-        totalBorrowAssets += interest;
         totalSupplyAssets += interest;
-
+        totalBorrowAssets += interest;
         lastAccrued = block.timestamp;
     }
 
-    // By Position
+    function FlashLoan(address token, uint256 amount, bytes calldata data) external {
+        if (amount == 0) revert ZeroAmount();
 
-    // function supplyCollateral(uint256 amount0, uint256 amount1) public {
-    //     accrueInterest();
+        IERC20(token).transfer(msg.sender, amount);
 
-    //     IERC20(collateral0).transferFrom(msg.sender, address(this), amount0);
-    //     IERC20(collateral1).transferFrom(msg.sender, address(this), amount1);
+        (bool success,) = address(msg.sender).call(data);
+        if (!success) revert FlashloanFailed();
 
-    //     userCollaterals[msg.sender] += amount;
-    // }
+        IERC20(token).transferFrom(msg.sender, address(this), amount);
 
-    function supplyCollateralByPosition(
-        // uint256 _position,
-        // uint256 amount0,
-        uint256 _amount
-    ) public {
-        // if (addressPosition[msg.sender][_position] != address(0)) {
-        if (addressPosition[msg.sender] != address(0)) {
-            accrueInterest();
-
-            IERC20(token1).transferFrom(msg.sender, address(this), _amount);
-            // position = Position(addressPosition[msg.sender][_position]);
-            position = Position(addressPosition[msg.sender]);
-            userCollaterals[msg.sender] += _amount;
-        } else {
-            revert();
-        }
-    }
-
-    function borrowByPosition(uint256 amount) public {
-        if (addressPosition[msg.sender] != address(0)) {
-            accrueInterest();
-            uint256 shares;
-            if (totalBorrowShares != 0) {
-                shares = (amount * totalBorrowShares) / totalBorrowAssets;
-            } else {
-                shares = amount;
-            }
-
-            totalBorrowAssets += amount;
-            totalBorrowShares += shares;
-            userBorrowShares[msg.sender] += shares;
-
-            IERC20(token2).transfer(msg.sender, amount);
-        } else {
-            revert();
-        }
-    }
-
-    function withdrawCollateral(
-        // uint256 amount0,
-        uint256 amount1
-    ) public {
-        // require(userCollaterals[msg.sender] >= amount0, "insufficient collateral");
-        require(userCollaterals[msg.sender] >= amount1, "insufficient collateral");
-        require(userBorrowShares[msg.sender] == 0, "cannot withdraw while borrowing");
-
-        accrueInterest();
-
-        // IERC20(token0).transfer(msg.sender, amount0);
-        IERC20(token1).transfer(msg.sender, amount1);
-
-        // userCollaterals[msg.sender] -= amount;
+        emit Flashloan(msg.sender, token, amount);
     }
 }

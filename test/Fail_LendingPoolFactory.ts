@@ -98,21 +98,36 @@ contract LendingPoolFactoryTest is Test {
         vm.startPrank(alice);
         IERC20(address(usdc)).approve(address(lendingPool), 100e18);
         lendingPool.supply(100e18);
-        // console.log("Total Supply Assets: ", lendingPool.totalSupplyAssets());
-        // console.log("Total Supply Shares: ", lendingPool.totalSupplyShares());
-        // console.log("User Supply Shares: ", lendingPool.userSupplyShares(alice));
+        console.log("Total Supply Assets: ", lendingPool.totalSupplyAssets());
+        console.log("Total Supply Shares: ", lendingPool.totalSupplyShares());
+        console.log("User Supply Shares: ", lendingPool.userSupplyShares(alice));
         vm.stopPrank();
 
         vm.startPrank(bob);
         lendingPool.createPosition();
-
+        // Supply 1 WBTC as Collateral 
         IERC20(address(wbtc)).approve(address(lendingPool), 1e8);
         lendingPool.supplyCollateralByPosition(1e8);
-
-        lendingPool.borrowByPosition(90e18);
+        // Borrow 90 USDC
+        lendingPool.borrowByPosition(90e10);
         console.log("User Borrow Shares: ", lendingPool.userBorrowShares(bob));
         // check bob balance
         console.log("Bob USDC Balance: ", usdc.balanceOf(bob));
         vm.stopPrank();
+
+        vm.startPrank(bob);
+        lendingPool.createPosition();
+        // Supply 1 WBTC as Collateral 
+        IERC20(address(wbtc)).approve(address(lendingPool), 1e8);
+        lendingPool.supplyCollateralByPosition(1e8);
+        // Borrow 90 USDC
+        lendingPool.borrowByPosition(90e10);
+        console.log("User Borrow Shares: ", lendingPool.userBorrowShares(bob));
+        // check bob balance
+        console.log("Bob USDC Balance: ", usdc.balanceOf(bob));
+        vm.stopPrank();
+        
+        // check total supply shares
+        // console.log("Total Supply Shares: ", lendingPool.totalSupplyShares());
     }
 }
