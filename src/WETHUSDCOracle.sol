@@ -12,7 +12,7 @@ interface IChainLink {
 }
 
 contract WETHUSDCOracle {
-    address quoteFeed = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH/USD
+    address quoteFeed = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH/USD 31.57 * 10 ** 8
     address baseFeed = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6; // USDC/USD
 
     function getPrice() public view returns (uint256) {
@@ -21,3 +21,4 @@ contract WETHUSDCOracle {
         return uint256(quotePrice) * 1e6 / uint256(basePrice);
     }
 }
+// 313357000000

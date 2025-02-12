@@ -134,10 +134,10 @@ contract LendingPool {
         _accrueInterest();
 
         uint256 borrowAmount = ((shares * totalBorrowAssets) / totalBorrowShares);
-
-        userBorrowShares[msg.sender] -= shares;
-        totalBorrowShares -= shares;
-        totalBorrowAssets -= borrowAmount;
+        // x * 550 / 500 = 500 (x)
+        userBorrowShares[msg.sender] -= shares; // 500 - 400
+        totalBorrowShares -= shares; // 500 - 400
+        totalBorrowAssets -= borrowAmount; // 550 - x
 
         IERC20(debtToken).transferFrom(msg.sender, address(this), borrowAmount);
 
@@ -158,9 +158,7 @@ contract LendingPool {
 
     function withdrawCollateral(uint256 amount) public {
         if (amount == 0) revert ZeroAmount();
-        if (amount > userCollaterals[msg.sender]) {
-            revert InsufficientCollateral();
-        }
+        if (amount > userCollaterals[msg.sender]) revert InsufficientCollateral();
 
         _accrueInterest();
 
