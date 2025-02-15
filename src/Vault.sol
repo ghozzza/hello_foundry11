@@ -18,6 +18,9 @@ contract Vault is ERC20 {
     constructor(address _assetToken) ERC20("Deposito Vault", "DEPO") {
         assetToken = _assetToken;
         owner = msg.sender;
+
+        IERC20(assetToken).transferFrom(msg.sender, address(this), 1000);
+        _mint(address(this), 1000);
     }
     // shares token
 

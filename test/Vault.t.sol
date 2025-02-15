@@ -17,6 +17,11 @@ contract VaultTest is Test {
     function setUp() public {
         // deploy vault
         tokenRupiah = new TokenRupiah();
+
+        tokenRupiah.mint(address(this), 1000);
+        address vaultAddress = computeCreateAddress(address(this), vm.getNonce(address(this)));
+        tokenRupiah.approve(vaultAddress, 1000); // kan belum tau address vault nya karena belum di deploy, caranya tau gimana?
+        // computeCreateAddress(deployer, nonce);
         vault = new Vault(address(tokenRupiah));
 
         // TokenRupiah
@@ -82,4 +87,6 @@ contract VaultTest is Test {
         vm.startPrank(alice);
         vault.withdraw(2_000_000e6);
     }
+
+    function test_infalation_attack() public {}
 }

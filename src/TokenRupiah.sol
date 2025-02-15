@@ -5,7 +5,7 @@ import {ERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol"
 
 contract TokenRupiah is ERC20 {
 
-  constructor() ERC20("TOken Rupiah", "IDRTOK") {
+  constructor() ERC20("Token Rupiah", "IDRTOK") {
   }
 
   function mint(address to, uint256 amount) public {
